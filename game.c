@@ -28,11 +28,14 @@
 
 
 #define MAX_MESH_VBO 7
+#define Y_MASK 1044482
+#define X_MASK 240
+#define Z_MASK 15
 
 
 const int chunkWidth = 16;
-const int chunkHeight = 16;  
-const int blockSize = 2.0f;
+const int chunkHeight = 256;  
+const int blockSize =  1.0f;
 
 const int worldSize = 32;
 
@@ -42,17 +45,8 @@ static float y = 0.0f;
 
 typedef struct {
     int x;
-    int z; 
-    int y;
-    int solid;
-    
-} Block;
-
-
-typedef struct {
-    int x;
     int z;
-    Block blocks_array[16 * 16 * 16];
+    int blocks_array[16 * 16 * 256];
     Model model;
     int loaded;
     int number_blocks;
@@ -60,9 +54,9 @@ typedef struct {
 
 Chunk world[32][32];
 
-const int renderDistance = 6; //MAXIMUM
+const int renderDistance = 1; //MAXIMUM
 //(2*rd+1)^2
-Chunk *activeChunks[(2*6+1) * (2*6+1)];
+Chunk *activeChunks[(2*1+1) * (2*1+1)];
 
 static float *GetCubeVertices(float x, float y, float z);
 Model GetChunkModel(Chunk *chunk);
@@ -77,10 +71,10 @@ void DrawChunkRegion(int color, Chunk *chunk);
 Vector3 DetermineCurrentChunkRegion(Camera *cam);
 void DetermineActiveChunks(Camera *camera);
 void DrawActiveChunks(Camera *cam);
-void DrawBlock(int color, Chunk c, Block block);
+void DrawBlock(int color, Chunk c, int block);
 
 Chunk createChunkRegion();
-Block createBlock(int x, int z, int y);
+int createBlock(int x, int z, int y);
 void createWorld();
 void freeWorld();
 
@@ -120,14 +114,20 @@ int main(void)
     SetTargetFPS(60);               // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
 
+    puts("Create world");
     createWorld();
+    puts("Finished");
     // Main game loop
+    int start =  1;
     while (!WindowShouldClose())    // Detect window close button or ESC key
     {
         // Update
         //----------------------------------------------------------------------------------
         UpdateCamera(&camera);
-        DetermineActiveChunks(&camera);
+        if(start) {
+            DetermineActiveChunks(&camera);
+            start = 0;
+        }
         
         GetYOffset();
 
@@ -165,10 +165,10 @@ int main(void)
 
 void GetYOffset(){
     if(IsKeyDown(KEY_Q)){
-        y_offset = .002f;
+        y_offset = .008f;
     } 
     else if(IsKeyDown(KEY_E)){
-        y_offset = -.002f;
+        y_offset = -.008f;
     }
     else{
         y_offset = 0.0f;
@@ -178,11 +178,9 @@ void GetYOffset(){
 
 
 
-Block createBlock(int x, int z, int y){
-    Block block;
-    block.x = x;
-    block.z = z;
-    block.y = y;  
+int createBlock(int x, int z, int y){
+    int block = 0;
+    block |= ((y << 12) | (x << 4) | (z));
     return block;
 }
 
@@ -201,11 +199,11 @@ Chunk createChunkRegion(int x, int z){
     for(int i = 0; i < chunkWidth; i++){
         for(int j = 0; j < chunkWidth; j++){
             for(int k = 0; k < chunkHeight; k++){
-                tmp_y = round(chunkHeight * perlin2d((i * blockSize)+(chunk.x * chunkWidth* blockSize), (j * blockSize)+(chunk.z * chunkWidth* blockSize), 0.04f, chunkHeight));
-                if(k < tmp_y){
-                    chunk.blocks_array[u] = createBlock(i,j,tmp_y);
+                //tmp_y = round(chunkHeight * perlin2d((i * blockSize)+(chunk.x * chunkWidth* blockSize), (j * blockSize)+(chunk.z * chunkWidth* blockSize), 0.04f, chunkHeight));
+                //if(k < tmp_y){
+                    chunk.blocks_array[u] = createBlock(i,j,k);
                     u++;
-                }
+                //}
             }    
         }
     }
@@ -238,6 +236,7 @@ void DrawChunkRegion(int color, Chunk *chunk){
 }
 
 void DrawActiveChunks(Camera *camera){
+    puts("DrawActiveChunks");
     int i = 0;
     while(i < ((2*renderDistance+1)*(2*renderDistance+1))){
         DrawChunkRegion(i,(activeChunks[i]));
@@ -559,8 +558,8 @@ Model GetChunkModel(Chunk *chunk)
 
     int u = 0;
     while(u < chunk->number_blocks){
-        Block b = chunk->blocks_array[u]; 
-        float *blockVertices = GetCubeVertices(b.x, b.y, b.z);
+        int b = chunk->blocks_array[u]; 
+        float *blockVertices = GetCubeVertices((b & X_MASK) >> 4, (b & Y_MASK) >> 12, b & Z_MASK);
         for (int v = 0; v < 36 * 3; v++){
             vertices[verticesCount + v] = blockVertices[v];
         }
