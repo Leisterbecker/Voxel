@@ -246,45 +246,36 @@ void markBlockfaces(int *block, Chunk *chunk){
     int MSB = 1 << (32 - 1);
 
 
-    
-    //Upper Side: y-1
     if(y-1 >= 0){
-        index = z * chunkWidth * chunkHeight + ((y-1) * chunkWidth) + x;
-        if(chunk->blocks_array[index] & MSB) *block |= 1 << 22;
-    }
-
-    //Lower Side: y+1
-    if(y+1 < chunkHeight){
-        index = z * chunkWidth * chunkHeight + ((y+1) * chunkWidth) + x;
+        index = z * chunkWidth * chunkHeight + ((y-1) * chunkWidth) + x; //Upper Side: y-1
         if(chunk->blocks_array[index] & MSB) *block |= 1 << 21;
     }
 
-    /*
-    //Left Side: x-1
+    if(y+1 < chunkHeight){
+        index = z * chunkWidth * chunkHeight + ((y+1) * chunkWidth) + x; //Lower Side: y+1
+        if(chunk->blocks_array[index] & MSB) *block |= 1 << 22;
+    }
+
     if(x-1 >= 0){
-        index = z * chunkWidth * chunkHeight + (y * chunkWidth) + (x-1);
-        if(chunk->blocks_array[index] & MSB) *block |= 1 << 20;
+        index = z * chunkWidth * chunkHeight + (y * chunkWidth) + (x-1); //Left Side: x-1
+        if(chunk->blocks_array[index] & MSB) *block |= 1 << 23;
     }
-
-    //Right Side: x+1
+    
     if(x+1 < chunkWidth){
-        index = z * chunkWidth * chunkHeight + (y * chunkWidth) + (x+1);
-        if(chunk->blocks_array[index] & MSB) *block |= 1 << 19;
+        index = z * chunkWidth * chunkHeight + (y * chunkWidth) + (x+1); //Right Side: x+1
+        if(chunk->blocks_array[index] & MSB) *block |= 1 << 24;
     }
 
-    /*
-    //Front Side: z-1
     if(z-1 >= 0){
-        index = (z-1) * chunkWidth * chunkHeight + (y * chunkWidth) + x;
-        if(chunk->blocks_array[index] & MSB) *block |= 1 << 18;
+        index = (z-1) * chunkWidth * chunkHeight + (y * chunkWidth) + x; //Front Side: z-1
+        if(chunk->blocks_array[index] & MSB) *block |= 1 << 25;
+    }
+    
+    if(z+1 < chunkWidth){
+        index = (z+1) * chunkWidth * chunkHeight + (y * chunkWidth) + x; //Back Side: z+1
+        if(chunk->blocks_array[index] & MSB) *block |= 1 << 26;
     }
 
-    //Back Side: z+1
-    if(z+1 < chunkWidth){
-        index = (z+1) * chunkWidth * chunkHeight + (y * chunkWidth) + x;
-        if(chunk->blocks_array[index] & MSB) *block |= 1 << 17;
-    }
-    */
 }
 
 
