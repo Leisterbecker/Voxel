@@ -84,6 +84,7 @@ Vector3 DetermineCurrentChunkRegion(Camera *cam);
 void DetermineActiveChunks(Camera *camera);
 void DrawActiveChunks(Camera *cam);
 void DrawBlock(int color, Chunk c, int block);
+void markBlockfaces(int *block, Chunk *chunk);
 
 Chunk createChunkRegion();
 int createBlock(int x, int z, int y);
@@ -225,26 +226,65 @@ Chunk createChunkRegion(int x, int z){
         }
     }
     chunk.number_blocks = u;
+
+    //check for neighbour blocks, mark neighboured faces with 1, blockface bits in order: UPPER LOWER LEFT RIGHT FRONT BACK
+    
+    for(int i = 0; i < chunk.number_blocks; i++){
+        markBlockfaces(&chunk.blocks_array[i], &chunk);
+    }
+    
     return chunk;
 }
 
 
-void markInvisibleBlockfaces(){
+void markBlockfaces(int *block, Chunk *chunk){
+    int x = (*block & X_MASK) >> 4;
+    int z = *block & Z_MASK;
+    int y = (*block & Y_MASK) >> 12;
+
+    int index = -1;
+    int MSB = 1 << (32 - 1);
+
+
     
-    
-    /*check for first bit
-    * 
-    *    x,y-1,z upper side 
-    *    x,y+1,z down side
-    *    x-1,y,z left side
-    *    x+1,y,z right side
-    *    x,y,z-1 front side
-    *    x,y,z+1 back side
-    *
-    *    if each x+1 or z-1 is >0 or <length, mark each
+    //Upper Side: y-1
+    if(y-1 >= 0){
+        index = z * chunkWidth * chunkHeight + ((y-1) * chunkWidth) + x;
+        if(chunk->blocks_array[index] & MSB) *block |= 1 << 22;
+    }
+
+    //Lower Side: y+1
+    if(y+1 < chunkHeight){
+        index = z * chunkWidth * chunkHeight + ((y+1) * chunkWidth) + x;
+        if(chunk->blocks_array[index] & MSB) *block |= 1 << 21;
+    }
+
+    /*
+    //Left Side: x-1
+    if(x-1 >= 0){
+        index = z * chunkWidth * chunkHeight + (y * chunkWidth) + (x-1);
+        if(chunk->blocks_array[index] & MSB) *block |= 1 << 20;
+    }
+
+    //Right Side: x+1
+    if(x+1 < chunkWidth){
+        index = z * chunkWidth * chunkHeight + (y * chunkWidth) + (x+1);
+        if(chunk->blocks_array[index] & MSB) *block |= 1 << 19;
+    }
+
+    /*
+    //Front Side: z-1
+    if(z-1 >= 0){
+        index = (z-1) * chunkWidth * chunkHeight + (y * chunkWidth) + x;
+        if(chunk->blocks_array[index] & MSB) *block |= 1 << 18;
+    }
+
+    //Back Side: z+1
+    if(z+1 < chunkWidth){
+        index = (z+1) * chunkWidth * chunkHeight + (y * chunkWidth) + x;
+        if(chunk->blocks_array[index] & MSB) *block |= 1 << 17;
+    }
     */
-
-
 }
 
 
@@ -317,9 +357,9 @@ void DetermineActiveChunks(Camera *camera){
     int start_z = c - renderDistance;
     
     for(int x = start_x; x < start_x + (2 * renderDistance + 1); x++){
-        for(int y = start_z; y < start_z + (2 * renderDistance + 1); y++){
-            if(x >= 0  && x < worldLength && y >= 0 && y < worldLength){
-                activeChunks[i] = &world[x + worldLength * y];
+        for(int z = start_z; z < start_z + (2 * renderDistance + 1); z++){
+            if(x >= 0  && x < worldLength && z >= 0 && z < worldLength){
+                activeChunks[i] = &world[x + worldLength * z];
                 i++;
             }
         }       
