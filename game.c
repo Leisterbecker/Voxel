@@ -29,6 +29,8 @@
 *
 ********************************************************************************************/
 
+
+
 #include "raylib.h"
 #include "rlgl.h"
 #include <stdlib.h>
@@ -36,11 +38,41 @@
 #include <string.h>
 #include <math.h>
 
+void printBits(size_t const size, void const * const ptr)
+{
+    unsigned char *b = (unsigned char*) ptr;
+    unsigned char byte;
+    int i, j;
+
+    for (i=size-1;i>=0;i--)
+    {
+        for (j=7;j>=0;j--)
+        {
+            byte = (b[i] >> j) & 1;
+            printf("%u", byte);
+        }
+    }
+    puts("");
+}
+
 
 #define MAX_MESH_VBO 7
-#define Y_MASK 1044482
-#define X_MASK 240
-#define Z_MASK 15
+
+#define Y_MASK 0x0000FF00
+#define X_MASK 0x000000F0
+#define Z_MASK 0x0000000F
+
+#define FACE_U 16
+#define FACE_D 17
+#define FACE_L 18
+#define FACE_R 19
+#define FACE_F 20
+#define FACE_B 21
+
+#define FACES_MASK 0b00000000001111110000000000000000
+#define HAS_NEIGHBOURS(x) (FACES_MASK & x) 
+#define IS_SURROUNDED(x) ((FACES_MASK & x) == FACES_MASK)
+
 
 
 const int chunkWidth = 16;
@@ -58,10 +90,13 @@ int wires = 0;
 typedef struct {
     int x;
     int z;
+    int number_blocks;
     int blocks_array[16 * 16 * 256];
+    int number_visibles;
+    int *visible_blocks;
     Model model;
     int loaded;
-    int number_blocks;
+
 } Chunk;
 
 Chunk world[10 * 10];
@@ -198,7 +233,7 @@ void GetYOffset(){
 
 int createBlock(int x, int z, int y){
     int block = 0;
-    block |= ((y << 12) | (x << 4) | (z) | (1 << 31));
+    block |= ((y << 8) | (x << 4) | (z) | (1 << 31));
     return block;
 }
 
@@ -232,7 +267,18 @@ Chunk createChunkRegion(int x, int z){
     for(int i = 0; i < chunk.number_blocks; i++){
         markBlockfaces(&chunk.blocks_array[i], &chunk);
     }
-    
+
+    int j = 0;
+    chunk.visible_blocks = malloc(sizeof(int) * 16 * 16 * 256);
+    for(int i = 0; i < chunk.number_blocks; i++){
+        if(1){
+            memcpy(&chunk.visible_blocks[j],&chunk.blocks_array[i],sizeof(int));
+            j++;
+        }
+    }
+    chunk.number_visibles = j;
+
+    printf("Chunk blocks: %d, visible blocks: %d\n",chunk.number_blocks, chunk.number_visibles);
     return chunk;
 }
 
@@ -240,7 +286,7 @@ Chunk createChunkRegion(int x, int z){
 void markBlockfaces(int *block, Chunk *chunk){
     int x = (*block & X_MASK) >> 4;
     int z = *block & Z_MASK;
-    int y = (*block & Y_MASK) >> 12;
+    int y = (*block & Y_MASK) >> 8;
 
     int index = -1;
     int MSB = 1 << (32 - 1);
@@ -248,32 +294,32 @@ void markBlockfaces(int *block, Chunk *chunk){
 
     if(y-1 >= 0){
         index = z * chunkWidth * chunkHeight + ((y-1) * chunkWidth) + x; //Upper Side: y-1
-        if(chunk->blocks_array[index] & MSB) *block |= 1 << 21;
+        if(chunk->blocks_array[index] & MSB) *block |= 1 << FACE_U;
     }
 
     if(y+1 < chunkHeight){
         index = z * chunkWidth * chunkHeight + ((y+1) * chunkWidth) + x; //Lower Side: y+1
-        if(chunk->blocks_array[index] & MSB) *block |= 1 << 22;
+        if(chunk->blocks_array[index] & MSB) *block |= 1 << FACE_D;
     }
 
     if(x-1 >= 0){
         index = z * chunkWidth * chunkHeight + (y * chunkWidth) + (x-1); //Left Side: x-1
-        if(chunk->blocks_array[index] & MSB) *block |= 1 << 23;
+        if(chunk->blocks_array[index] & MSB) *block |= 1 << FACE_L;
     }
     
     if(x+1 < chunkWidth){
         index = z * chunkWidth * chunkHeight + (y * chunkWidth) + (x+1); //Right Side: x+1
-        if(chunk->blocks_array[index] & MSB) *block |= 1 << 24;
+        if(chunk->blocks_array[index] & MSB) *block |= 1 << FACE_R;
     }
 
     if(z-1 >= 0){
         index = (z-1) * chunkWidth * chunkHeight + (y * chunkWidth) + x; //Front Side: z-1
-        if(chunk->blocks_array[index] & MSB) *block |= 1 << 25;
+        if(chunk->blocks_array[index] & MSB) *block |= 1 << FACE_F;
     }
     
     if(z+1 < chunkWidth){
         index = (z+1) * chunkWidth * chunkHeight + (y * chunkWidth) + x; //Back Side: z+1
-        if(chunk->blocks_array[index] & MSB) *block |= 1 << 26;
+        if(chunk->blocks_array[index] & MSB) *block |= 1 << FACE_B;
     }
 
 }
@@ -297,7 +343,7 @@ void DrawChunkRegion(int color, Chunk *chunk){
     }
     yl = yl + y_offset;
     if(!wires){
-         DrawModelWires(chunk->model, (Vector3){chunk->x * chunkWidth, yl, chunk->z * chunkWidth}, 1.0f, WHITE);
+        DrawModelWires(chunk->model, (Vector3){chunk->x * chunkWidth, yl, chunk->z * chunkWidth}, 1.0f, WHITE);
     }
     else{
         DrawModel(chunk->model, (Vector3){chunk->x * chunkWidth, yl, chunk->z * chunkWidth}, 1.0f, WHITE);
@@ -306,7 +352,6 @@ void DrawChunkRegion(int color, Chunk *chunk){
 }
 
 void DrawActiveChunks(Camera *camera){
-    puts("DrawActiveChunks");
     int i = 0;
     while(i < ((2*renderDistance+1)*(2*renderDistance+1))){
         DrawChunkRegion(i,(activeChunks[i]));
@@ -627,27 +672,29 @@ Model GetChunkModel(Chunk *chunk)
 
 
     int u = 0;
+    int renderedBlocks = 0;
 // iterate only over visible blocks, calculate visible block faces and render
-    while(u < chunk->number_blocks){
-        int b = chunk->blocks_array[u]; 
+    while(u < chunk->number_visibles){
+        int b = chunk->visible_blocks[u];
+        float *blockVertices = GetCubeVertices((b & X_MASK) >> 4, (b & Y_MASK) >> 8, b & Z_MASK);
         
-        float *blockVertices = GetCubeVertices((b & X_MASK) >> 4, (b & Y_MASK) >> 12, b & Z_MASK);
-        for (int v = 0; v < 36 * 3; v++){
-            vertices[verticesCount + v] = blockVertices[v];
-        }
-        for (int t = 0; t < 36 * 2; t++){
-            texcoords[texcoordsCount + t] = texcoordsRef[t];
-        }
-        for (int n = 0; n < 36 * 3; n++){
-            normals[normalsCount + n] = normalsRef[n];
-        }
-        verticesCount += 36 * 3;
-        texcoordsCount += 36 * 2;
-        normalsCount += 36 * 3;
+	    for (int v = 0; v < 36 * 3; v++){
+	        vertices[verticesCount + v] = blockVertices[v];
+	    }
+	    for (int t = 0; t < 36 * 2; t++){
+	        texcoords[texcoordsCount + t] = texcoordsRef[t];
+	    }
+	    for (int n = 0; n < 36 * 3; n++){
+	        normals[normalsCount + n] = normalsRef[n];
+	    }
+	    verticesCount += 36 * 3;
+	    texcoordsCount += 36 * 2;
+	    normalsCount += 36 * 3;
   
-        u++;
-
+	    u++;
+        renderedBlocks++;
     }
+    //printf("Rendered blocks: %d\n",renderedBlocks);
   
     Model chunkModel = {0};
 
