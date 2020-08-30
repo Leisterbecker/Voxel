@@ -1,22 +1,31 @@
 /*******************************************************************************************
 *
-*   raylib [core] example - Basic window
+*  Voxel Game
 *
-*   Welcome to raylib!
 *
-*   To test examples in Notepad++, provided with default raylib installer package, 
-*   just press F6 and run [raylib_compile_execute] script, it will compile and execute.
-*   Note that compiled executable is placed in the same folder as .c file
+*  ToDo/Ideas:
 *
-*   You can find all basic examples on [C:\raylib\raylib\examples] directory and
-*   raylib official webpage: [www.raylib.com]
+*    Iterate over all blocks: Check if block-side is empty, mark in integer
+*    In renderer: calculate all visible block sides
+*  
+*    block-int: 10 bits free
+*    0000 0000 0000 0000 0000 0000 0000 0000
+*                |      |         |    |    |
+*                 faces     y       x     z
 *
-*   Enjoy using raylib. :)
+*    faces: 6 bits set 1 for neighbor or 0 if not -> (faces != 0 ? render faces that are 1 : dont render anything, dont put in list)    
 *
-*   This example has been created using raylib 1.0 (www.raylib.com)
-*   raylib is licensed under an unmodified zlib/libpng license (View raylib.h for details)
+*    Determine list of visible blocks:   
 *
-*   Copyright (c) 2013-2020 Ramon Santamaria (@raysan5)
+*      + blocklist is list of block-ints
+*      + visible blocks is list of pointers to block ints of the blocklist (visible blocks are part of chunk)
+*
+*          iterate over every block of chunk: check 3d neighborhood and mark blockface if neighbor exists, enums for blockfaces needed
+*
+*
+*
+*
+*    Raycast visible chunks: 
 *
 ********************************************************************************************/
 
@@ -25,6 +34,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 
 #define MAX_MESH_VBO 7
@@ -36,11 +46,13 @@
 const int chunkWidth = 16;
 const int chunkHeight = 256;  
 const int blockSize =  1.0f;
-
-const int worldSize = 32;
+const int worldSize = 10 * 10;
+const int worldLength = 10;
 
 float y_offset = 0.0f;
-static float y = 0.0f;
+static float yl = 0.0f;
+
+int wires = 0;
 
 
 typedef struct {
@@ -52,7 +64,7 @@ typedef struct {
     int number_blocks;
 } Chunk;
 
-Chunk world[32][32];
+Chunk world[10 * 10];
 
 const int renderDistance = 1; //MAXIMUM
 //(2*rd+1)^2
@@ -96,7 +108,7 @@ int main(void)
     
     float cam_start_x = 100.0f;
     float cam_start_z = 100.0f;
-    float cam_start_y = 45.0f;
+    float cam_start_y = 250.0f;
    
     InitWindow(screenWidth, screenHeight, "raylib [core] example - basic window");
     
@@ -114,21 +126,19 @@ int main(void)
     SetTargetFPS(60);               // Set our game to run at 60 frames-per-second
     //--------------------------------------------------------------------------------------
 
+
+
     puts("Create world");
     createWorld();
     puts("Finished");
     // Main game loop
-    int start =  1;
     while (!WindowShouldClose())    // Detect window close button or ESC key
     {
         // Update
         //----------------------------------------------------------------------------------
+        if(IsKeyPressed(KEY_R)) wires = !wires;
         UpdateCamera(&camera);
-        if(start) {
-            DetermineActiveChunks(&camera);
-            start = 0;
-        }
-        
+        DetermineActiveChunks(&camera);
         GetYOffset();
 
         //----------------------------------------------------------------------------------
@@ -137,7 +147,13 @@ int main(void)
         //----------------------------------------------------------------------------------
         BeginDrawing();    
             
-            ClearBackground(BLUE);
+            if(!wires){
+                ClearBackground(BLACK);
+            }
+            else{
+                ClearBackground(BLUE);
+            }
+
             
             DrawText(TextFormat("Chunk x: %i", (int)camera.position.x/32), 10, 30, 8, BLACK);
             DrawText(TextFormat("Chunk z: %i", (int)camera.position.z/32), 130, 30, 8, BLACK);
@@ -146,7 +162,7 @@ int main(void)
 
             BeginMode3D(camera);
                 DrawActiveChunks(&camera);
-                DrawGrid(100,32.0);
+                if(wires)    DrawGrid(100,32.0);
 
             EndMode3D(); 
             DrawFPS(10, 10); 
@@ -154,6 +170,7 @@ int main(void)
         EndDrawing();
         //----------------------------------------------------------------------------------
     }
+
 
     // De-Initialization
     //--------------------------------------------------------------------------------------
@@ -165,10 +182,10 @@ int main(void)
 
 void GetYOffset(){
     if(IsKeyDown(KEY_Q)){
-        y_offset = .008f;
+        y_offset = .08f;
     } 
     else if(IsKeyDown(KEY_E)){
-        y_offset = -.008f;
+        y_offset = -.08f;
     }
     else{
         y_offset = 0.0f;
@@ -180,7 +197,7 @@ void GetYOffset(){
 
 int createBlock(int x, int z, int y){
     int block = 0;
-    block |= ((y << 12) | (x << 4) | (z));
+    block |= ((y << 12) | (x << 4) | (z) | (1 << 31));
     return block;
 }
 
@@ -191,19 +208,19 @@ Chunk createChunkRegion(int x, int z){
     Chunk chunk;
     chunk.x = x;
     chunk.z = z;
-    chunk.model;
+
     chunk.loaded = 0;
-    int tmp_y = 0;
-    //map_init(&chunk.blocks);
+    float tmp_y = 0;
+
     
     for(int i = 0; i < chunkWidth; i++){
         for(int j = 0; j < chunkWidth; j++){
             for(int k = 0; k < chunkHeight; k++){
-                //tmp_y = round(chunkHeight * perlin2d((i * blockSize)+(chunk.x * chunkWidth* blockSize), (j * blockSize)+(chunk.z * chunkWidth* blockSize), 0.04f, chunkHeight));
-                //if(k < tmp_y){
+                tmp_y = chunkHeight * perlin2d((i * blockSize)+(chunk.x * chunkWidth* blockSize), (j * blockSize)+(chunk.z * chunkWidth* blockSize), 0.02f, 5);
+                if(k <= tmp_y){
                     chunk.blocks_array[u] = createBlock(i,j,k);
                     u++;
-                //}
+                }
             }    
         }
     }
@@ -212,13 +229,29 @@ Chunk createChunkRegion(int x, int z){
 }
 
 
+void markInvisibleBlockfaces(){
+    
+    
+    /*check for first bit
+    * 
+    *    x,y-1,z upper side 
+    *    x,y+1,z down side
+    *    x-1,y,z left side
+    *    x+1,y,z right side
+    *    x,y,z-1 front side
+    *    x,y,z+1 back side
+    *
+    *    if each x+1 or z-1 is >0 or <length, mark each
+    */
+
+
+}
+
+
 void createWorld(){
     int i;
-    int j;
     for(i = 0; i < worldSize; i++){
-        for(j = 0; j < worldSize; j++){
-            world[i][j] = createChunkRegion(i,j); 
-        }
+        world[i] = createChunkRegion(i%worldLength,i/worldLength); 
     }     
 }
 
@@ -231,8 +264,14 @@ void DrawChunkRegion(int color, Chunk *chunk){
         chunk->model = GetChunkModel(chunk);
         chunk->loaded = 1;
     }
-    y = y + y_offset;
-    DrawModel(chunk->model, (Vector3){chunk->x * 16, y, chunk->z * 16}, 1.0f, WHITE);
+    yl = yl + y_offset;
+    if(!wires){
+         DrawModelWires(chunk->model, (Vector3){chunk->x * chunkWidth, yl, chunk->z * chunkWidth}, 1.0f, WHITE);
+    }
+    else{
+        DrawModel(chunk->model, (Vector3){chunk->x * chunkWidth, yl, chunk->z * chunkWidth}, 1.0f, WHITE);
+    }
+
 }
 
 void DrawActiveChunks(Camera *camera){
@@ -266,6 +305,7 @@ Vector3 DetermineCurrentChunkRegion(Camera *camera){
     return currentChunk;
 }
 
+//raycast the chunks from character view, not behind camera
 void DetermineActiveChunks(Camera *camera){
     int i = 0;
     
@@ -278,8 +318,8 @@ void DetermineActiveChunks(Camera *camera){
     
     for(int x = start_x; x < start_x + (2 * renderDistance + 1); x++){
         for(int y = start_z; y < start_z + (2 * renderDistance + 1); y++){
-            if(x >= 0  && x < worldSize && y >= 0 && y < worldSize){
-                activeChunks[i] = &world[x][y];
+            if(x >= 0  && x < worldLength && y >= 0 && y < worldLength){
+                activeChunks[i] = &world[x + worldLength * y];
                 i++;
             }
         }       
@@ -468,9 +508,8 @@ static float normalsRef[] = {
     -1.0f, 0.0f, 0.0f,
     -1.0f, 0.0f, 0.0f};
 
-// note: Yes, the implementation of the world model is dirty.
-// todo: reimplement as chunks
 
+//take another arg: faces -> calculates the specified faces
 static float *GetCubeVertices(float x, float y, float z)
 {
     // not using indices
@@ -557,8 +596,10 @@ Model GetChunkModel(Chunk *chunk)
 
 
     int u = 0;
+// iterate only over visible blocks, calculate visible block faces and render
     while(u < chunk->number_blocks){
         int b = chunk->blocks_array[u]; 
+        
         float *blockVertices = GetCubeVertices((b & X_MASK) >> 4, (b & Y_MASK) >> 12, b & Z_MASK);
         for (int v = 0; v < 36 * 3; v++){
             vertices[verticesCount + v] = blockVertices[v];
@@ -576,30 +617,53 @@ Model GetChunkModel(Chunk *chunk)
         u++;
 
     }
-   
+  
+    Model chunkModel = {0};
+
+    if(wires){
+        mesh.vertices = (float *)RL_MALLOC(verticesCount * sizeof(float));
+		memcpy(mesh.vertices, vertices, verticesCount * sizeof(float));
+
+		mesh.texcoords = (float *)RL_MALLOC(texcoordsCount * sizeof(float));
+		memcpy(mesh.texcoords, texcoords, texcoordsCount * sizeof(float));
+
+		mesh.normals = (float *)RL_MALLOC(normalsCount * sizeof(float));
+		memcpy(mesh.normals, normals, normalsCount * sizeof(float));
+
+		mesh.vertexCount = verticesCount / 3;         // fixme: Why divide by 3 ???
+		mesh.triangleCount = (verticesCount / 3) / 2; // fixme: Why divide by 3 and 2 ???
+
+		RL_FREE(vertices);
+		RL_FREE(texcoords);
+		RL_FREE(normals);
+
+		rlLoadMesh(&mesh, false);
+		
+
+		chunkModel = LoadModelFromMesh(mesh);
+		chunkModel.materials[0].maps[MAP_DIFFUSE].texture = LoadTexture("grass.png");
+
+    }
+    else{
+        mesh.vertices = (float *)RL_MALLOC(verticesCount * sizeof(float));
+		memcpy(mesh.vertices, vertices, verticesCount * sizeof(float));
 
 
-    mesh.vertices = (float *)RL_MALLOC(verticesCount * sizeof(float));
-    memcpy(mesh.vertices, vertices, verticesCount * sizeof(float));
+		mesh.normals = (float *)RL_MALLOC(normalsCount * sizeof(float));
+		memcpy(mesh.normals, normals, normalsCount * sizeof(float));
 
-    mesh.texcoords = (float *)RL_MALLOC(texcoordsCount * sizeof(float));
-    memcpy(mesh.texcoords, texcoords, texcoordsCount * sizeof(float));
+		mesh.vertexCount = verticesCount / 3;         // fixme: Why divide by 3 ???
+		mesh.triangleCount = (verticesCount / 3) / 2; // fixme: Why divide by 3 and 2 ???
 
-    mesh.normals = (float *)RL_MALLOC(normalsCount * sizeof(float));
-    memcpy(mesh.normals, normals, normalsCount * sizeof(float));
+		RL_FREE(vertices);
+		RL_FREE(texcoords);
+		RL_FREE(normals);
 
-    mesh.vertexCount = verticesCount / 3;         // fixme: Why divide by 3 ???
-    mesh.triangleCount = (verticesCount / 3) / 2; // fixme: Why divide by 3 and 2 ???
+		rlLoadMesh(&mesh, false);
+		
 
-    RL_FREE(vertices);
-    RL_FREE(texcoords);
-    RL_FREE(normals);
-
-    rlLoadMesh(&mesh, false);
-
-    Model chunkModel = LoadModelFromMesh(mesh);
-
-    chunkModel.materials[0].maps[MAP_DIFFUSE].texture = LoadTexture("grass.png");
+		chunkModel = LoadModelFromMesh(mesh);
+    }
 
     return chunkModel;
 }
